@@ -1,163 +1,195 @@
-"""
-Car Coasting Lab - Non-linear model  (MeEn 335)
+# Car Coasting Lab - Nonlinear model (MeEn 335)
+#
+# Run the whole file (F5 in Spyder), or one cell at a time (Ctrl+Enter).
+# The data files north_data.csv and south_data.csv must be in the same
+# folder as this file.
 
-Equation of motion (x positive in the direction of travel):
-
-    m dv/dt = -s m g sin(theta)  -  mu_k m g cos(theta)  -  1/2 Cd A rho v_rel|v_rel|
-
-    s     = +1 going North (uphill), -1 going South (downhill)
-    v_rel = v + s v_wind   (wind blows from the North: headwind going North,
-                            tailwind going South)
-
-Every term is a force in N. Gravity's sign flips with direction, friction and
-drag always oppose the motion, and drag uses the speed relative to the air.
-
-The unknowns Cd and mu_k (and each run's starting speed v0, since the first
-GPS reading is noisy) are fit by least squares, simulating with solve_ivp.
-
-Run this file for the fits and Figures 1-2; run uncertainty_power.py for the
-power predictions and uncertainty analysis.
-"""
-
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from scipy.optimize import least_squares
 
-# ---- given in the lab handout ----
-MASS = 1760 + 150             # kg, car + passengers
-THETA_DEG = 1.03              # incline angle, degrees
-AREA = 2.15                   # m^2, projected frontal area
-RHO = 1.06                    # kg/m^3, air density
-V_WIND = 7 * 0.44704          # m/s, 7 mph wind from the North
-G = 9.81                      # m/s^2
-
-RUNS = {"North": ("north_data.csv", +1), "South": ("south_data.csv", -1)}
+# Look for the data files in the same folder as this script
+if "__file__" in globals():
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
-def load_run(path):
-    """Time [s] and speed [m/s], starting when the speed first changes.
+# %% 1. Values given in the lab handout
 
-    The logger repeats its first reading for ~0.7 s, so those samples are
-    dropped. Duplicate time stamps are removed.
-    """
-    t, v = np.loadtxt(path, delimiter=",", skiprows=1, unpack=True)
-    t, first = np.unique(t, return_index=True)
-    v = v[first]
+m = 1760 + 150                    # mass of car + passengers [kg]
+g = 9.81                          # gravity [m/s^2]
+theta = np.radians(1.03)          # road incline [rad]
+A = 2.15                          # frontal area [m^2]
+rho = 1.06                        # air density [kg/m^3]
+v_wind = 7 * 0.44704              # 7 mph wind from the North [m/s]
+
+
+# %% 2. Load the GPS data
+
+def load_data(filename):
+    data = np.loadtxt(filename, delimiter=",", skiprows=1)
+    # Some time stamps appear twice; keep one of each (solve_ivp needs
+    # strictly increasing times)
+    t, keep = np.unique(data[:, 0], return_index=True)
+    v = data[keep, 1]
+    # The logger repeats its first reading for ~0.7 s before it starts
+    # updating, so start the data where the speed first changes.
     start = np.argmax(v != v[0])
     return t[start:] - t[start], v[start:]
 
-
-def forces(v, Cd, mu, s, theta_deg=THETA_DEG, v_wind=V_WIND, m=MASS):
-    """Gravity, friction and drag forces [N] acting along the direction of travel."""
-    th = np.radians(theta_deg)
-    v_rel = v + s * v_wind
-    f_grav = -s * m * G * np.sin(th)
-    f_fric = -mu * m * G * np.cos(th) * np.ones_like(v)
-    f_drag = -0.5 * Cd * AREA * RHO * v_rel * np.abs(v_rel)
-    return f_grav, f_fric, f_drag
+t_north, v_north = load_data("north_data.csv")   # driving uphill, into the wind
+t_south, v_south = load_data("south_data.csv")   # driving downhill, wind behind
 
 
-def simulate(t, v0, Cd, mu, s, **conditions):
-    """Speed at times t from integrating the equation of motion."""
-    m = conditions.get("m", MASS)
-    dvdt = lambda _, v: sum(forces(v, Cd, mu, s, **conditions)) / m
-    return solve_ivp(dvdt, (0, t[-1]), [v0], t_eval=t, rtol=1e-8).y[0]
+# %% 3. Equation of motion
+#
+#   m dv/dt = - (gravity) - (rolling friction) - (aerodynamic drag)
+#
+#   gravity  = +m g sin(theta) going North (uphill), -m g sin(theta) going South
+#   friction = mu_k * N = mu_k m g cos(theta)          (always slows the car)
+#   drag     = 1/2 Cd A rho v_rel^2, where v_rel = speed relative to the air:
+#              v + v_wind going North (headwind), v - v_wind going South
+
+def dv_dt(t, v, Cd, mu_k, direction):
+    if direction == "North":
+        gravity = m * g * np.sin(theta)
+        v_rel = v + v_wind
+    else:
+        gravity = -m * g * np.sin(theta)
+        v_rel = v - v_wind
+    friction = mu_k * m * g * np.cos(theta)
+    drag = 0.5 * Cd * A * rho * v_rel**2
+    return -(gravity + friction + drag) / m
 
 
-def fit_run(t, v, s, **conditions):
-    """Least-squares fit of Cd, mu_k and v0 to one run. Returns (Cd, mu, v0), rmse."""
-    resid = lambda p: v - simulate(t, p[2], p[0], p[1], s, **conditions)
-    sol = least_squares(resid, [0.3, 0.01, v[0]])
-    return sol.x, np.sqrt(np.mean(sol.fun ** 2))
+def simulate(t, v0, Cd, mu_k, direction):
+    """Solve the equation of motion with solve_ivp; return speed at times t."""
+    sol = solve_ivp(dv_dt, [0, t[-1]], [v0], t_eval=t,
+                    args=(Cd, mu_k, direction), rtol=1e-8)
+    return sol.y[0]
 
 
-def fit_joint_free_theta(data):
-    """One Cd and mu_k for BOTH runs, with the incline angle also fit.
+# %% 4. Find the Cd and mu_k that best match each run
+#
+# least_squares adjusts [Cd, mu_k, v0] until the simulated speed matches the
+# GPS speed as closely as possible. v0 (starting speed) is also adjusted
+# because the first GPS reading is noisy.
 
-    Returns (Cd, mu, theta_deg, v0_north, v0_south), rmse.
-    """
-    def resid(p):
-        Cd, mu, th, *v0s = p
-        return np.concatenate([
-            v - simulate(t, v0, Cd, mu, s, theta_deg=th)
-            for (t, v, s), v0 in zip(data.values(), v0s)])
-    p0 = [0.3, 0.01, THETA_DEG] + [v[0] for _, v, _ in data.values()]
-    sol = least_squares(resid, p0)
-    return sol.x, np.sqrt(np.mean(sol.fun ** 2))
+def fit(t, v, direction):
+    def error(p):
+        Cd, mu_k, v0 = p
+        return v - simulate(t, v0, Cd, mu_k, direction)
+    result = least_squares(error, [0.3, 0.01, v[0]])
+    Cd, mu_k, v0 = result.x
+    rms_error = np.sqrt(np.mean(result.fun**2))
+    return Cd, mu_k, v0, rms_error
 
+Cd_N, mu_N, v0_N, err_N = fit(t_north, v_north, "North")
+Cd_S, mu_S, v0_S, err_S = fit(t_south, v_south, "South")
 
-def load_all():
-    return {name: (*load_run(path), s) for name, (path, s) in RUNS.items()}
+# Final answer: average of the two runs. Any error in the incline angle makes
+# mu_k too high in one direction and too low in the other, so it cancels.
+Cd = (Cd_N + Cd_S) / 2
+mu_k = (mu_N + mu_S) / 2
 
-
-def main():
-    data = load_all()
-    fits = {name: fit_run(t, v, s) for name, (t, v, s) in data.items()}
-    joint, joint_rmse = fit_joint_free_theta(data)
-
-    print(f"Fits with theta = {THETA_DEG} deg (from handout):")
-    print(f"{'Run':<7}{'Cd':>8}{'mu_k':>9}{'v0 [m/s]':>10}{'RMSE [m/s]':>12}")
-    for name, ((Cd, mu, v0), rmse) in fits.items():
-        print(f"{name:<7}{Cd:>8.3f}{mu:>9.4f}{v0:>10.2f}{rmse:>12.3f}")
-    Cd_avg = np.mean([f[0][0] for f in fits.values()])
-    mu_avg = np.mean([f[0][1] for f in fits.values()])
-    print(f"{'Mean':<7}{Cd_avg:>8.3f}{mu_avg:>9.4f}")
-    print(f"\nCheck - one Cd, mu_k for both runs, theta also fit:")
-    print(f"  Cd = {joint[0]:.3f}, mu_k = {joint[1]:.4f}, "
-          f"theta = {joint[2]:.2f} deg, RMSE = {joint_rmse:.3f} m/s")
-
-    # ---- Figure 1: model vs data ----
-    fig, axes = plt.subplots(2, 2, figsize=(12, 7), sharex="col",
-                             gridspec_kw={"height_ratios": [3, 1]})
-    for col, (name, (t, v, s)) in enumerate(data.items()):
-        (Cd, mu, v0), rmse = fits[name]
-        v_fit = simulate(t, v0, Cd, mu, s)
-        v_joint = simulate(t, joint[3 + col], joint[0], joint[1], s,
-                           theta_deg=joint[2])
-        top, bottom = axes[:, col]
-        top.plot(t, v, ".", ms=2, color="0.65", label="GPS data")
-        top.plot(t, v_fit, color="C3", lw=2,
-                 label=f"fit (θ={THETA_DEG}°): Cd={Cd:.3f}, μk={mu:.4f}")
-        top.plot(t, v_joint, "--", color="C0", lw=1.5,
-                 label=f"joint fit (θ={joint[2]:.2f}°): "
-                       f"Cd={joint[0]:.3f}, μk={joint[1]:.4f}")
-        top.set(title=f"Traveling {name}", ylabel="speed [m/s]")
-        top.legend(fontsize=8)
-        bottom.plot(t, v - v_fit, ".", ms=2, color="C3")
-        bottom.axhline(0, color="k", lw=0.8)
-        bottom.set(xlabel="time [s]", ylabel="residual [m/s]")
-    fig.suptitle("Non-linear model vs. measured coast-down")
-    fig.tight_layout()
-    fig.savefig("fig1_nonlinear_fit.png", dpi=150)
-
-    # ---- Figure 2: what each term does ----
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
-    t, v, s = data["North"]
-    (Cd, mu, v0), _ = fits["North"]
-    base = simulate(t, v0, Cd, mu, s)
-    for k, (label, args) in enumerate({
-            "Cd +20%": (1.2 * Cd, mu), "μk +20%": (Cd, 1.2 * mu)}.items()):
-        ax1.plot(t, simulate(t, v0, *args, s) - base, color=f"C{k}", label=label)
-    ax1.set(xlabel="time [s]", ylabel="change in speed [m/s]",
-            title="Effect of each parameter (North run)")
-    ax1.axhline(0, color="k", lw=0.8)
-    ax1.legend()
-    # drag vs friction on level ground with no wind, using the mean values
-    speeds = np.linspace(0, 45, 100)
-    _, f_fric, f_drag = forces(speeds, Cd_avg, mu_avg, s=0, theta_deg=0)
-    ax2.plot(speeds, -f_drag, label="aerodynamic drag  (∝ Cd v²)")
-    ax2.plot(speeds, -f_fric, label="rolling friction  (∝ μk, constant)")
-    for k, (name, (t, v, s)) in enumerate(data.items()):
-        ax2.axvspan(v.min(), v.max(), color=f"C{k + 2}", alpha=0.12,
-                    label=f"speeds covered going {name}")
-    ax2.set(xlabel="speed [m/s]", ylabel="retarding force [N]",
-            title=f"Level ground, no wind (Cd={Cd_avg:.3f}, μk={mu_avg:.4f})")
-    ax2.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig("fig2_term_effects.png", dpi=150)
-    plt.show()
+print("Run      Cd      mu_k     RMS error [m/s]")
+print(f"North  {Cd_N:.3f}   {mu_N:.4f}    {err_N:.3f}")
+print(f"South  {Cd_S:.3f}   {mu_S:.4f}    {err_S:.3f}")
+print(f"Mean   {Cd:.3f}   {mu_k:.4f}")
 
 
-if __name__ == "__main__":
-    main()
+# %% 5. Plot: model vs. data
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+ax1.plot(t_north, v_north, ".", color="gray", markersize=2, label="GPS data")
+ax1.plot(t_north, simulate(t_north, v0_N, Cd_N, mu_N, "North"), "r",
+         label=f"model: Cd = {Cd_N:.3f}, μk = {mu_N:.4f}")
+ax1.set(title="Traveling North (uphill)", xlabel="time [s]", ylabel="speed [m/s]")
+ax1.legend()
+ax2.plot(t_south, v_south, ".", color="gray", markersize=2, label="GPS data")
+ax2.plot(t_south, simulate(t_south, v0_S, Cd_S, mu_S, "South"), "r",
+         label=f"model: Cd = {Cd_S:.3f}, μk = {mu_S:.4f}")
+ax2.set(title="Traveling South (downhill)", xlabel="time [s]", ylabel="speed [m/s]")
+ax2.legend()
+fig.tight_layout()
+fig.savefig("fig_nonlinear_fit.png", dpi=150)
+
+
+# %% 6. What does each term do?
+#
+# Raise Cd or mu_k by 20% and see how the North run's speed changes.
+# Drag matters most at high speed (early in the run); friction slows the car
+# by the same amount at every speed, so its effect grows steadily with time.
+
+base = simulate(t_north, v0_N, Cd_N, mu_N, "North")
+more_drag = simulate(t_north, v0_N, 1.2 * Cd_N, mu_N, "North")
+more_friction = simulate(t_north, v0_N, Cd_N, 1.2 * mu_N, "North")
+
+plt.figure(figsize=(6, 4))
+plt.plot(t_north, more_drag - base, label="Cd + 20%")
+plt.plot(t_north, more_friction - base, label="μk + 20%")
+plt.title("Effect of each parameter (North run)")
+plt.xlabel("time [s]")
+plt.ylabel("change in speed [m/s]")
+plt.legend()
+plt.tight_layout()
+plt.savefig("fig_term_effects.png", dpi=150)
+
+
+# %% 7. Power needed on level ground (no wind)
+#
+# At a steady speed the engine force equals friction + drag, and P = F * v.
+
+def power_hp(v, Cd, mu_k):
+    force = mu_k * m * g + 0.5 * Cd * A * rho * v**2
+    return force * v / 745.7          # 745.7 W = 1 hp
+
+v55 = 55 * 0.44704
+v100 = 100 * 0.44704
+print(f"\nPower at  55 mph: {power_hp(v55, Cd, mu_k):.1f} hp")
+print(f"Power at 100 mph: {power_hp(v100, Cd, mu_k):.1f} hp")
+print("(The 2016 GS350 engine is rated at 311 hp.)")
+
+
+# %% 8. Uncertainty
+#
+# (a) Repeating the test: the North and South runs are two separate tests,
+#     so the difference between them shows how much Cd and mu_k could vary.
+
+dCd = abs(Cd_N - Cd_S) / 2
+dmu = abs(mu_N - mu_S) / 2
+print(f"\nCd   = {Cd:.3f} ± {dCd:.3f}")
+print(f"mu_k = {mu_k:.4f} ± {dmu:.4f}")
+
+# Effect on horsepower: compare the power from each run's own values
+for speed, name in [(v55, " 55 mph"), (v100, "100 mph")]:
+    p_N = power_hp(speed, Cd_N, mu_N)
+    p_S = power_hp(speed, Cd_S, mu_S)
+    print(f"{name}: {power_hp(speed, Cd, mu_k):.1f} ± {abs(p_N - p_S) / 2:.1f} hp")
+
+# (b) Different combinations that fit equally well: compute the RMS error
+#     over a grid of Cd and mu_k values. A long, thin valley means a higher Cd
+#     with a lower mu_k fits almost as well, so the two are hard to separate.
+
+Cd_values = np.linspace(0.15, 0.45, 60)
+mu_values = np.linspace(0.0, 0.035, 60)
+plt.figure(figsize=(7, 5))
+for t, v, v0, direction, color in [(t_north, v_north, v0_N, "North", "C0"),
+                                   (t_south, v_south, v0_S, "South", "C1")]:
+    rms = np.zeros((len(mu_values), len(Cd_values)))
+    for i, mu_try in enumerate(mu_values):
+        for j, Cd_try in enumerate(Cd_values):
+            v_model = simulate(t[::10], v0, Cd_try, mu_try, direction)
+            rms[i, j] = np.sqrt(np.mean((v[::10] - v_model)**2))
+    plt.contour(Cd_values, mu_values, rms, levels=[0.2, 0.3, 0.5], colors=color)
+    plt.plot([], [], color=color, label=f"{direction} run (RMS error 0.2, 0.3, 0.5 m/s)")
+plt.errorbar(Cd, mu_k, xerr=dCd, yerr=dmu, fmt="k*", markersize=12,
+             capsize=4, label="final answer ± uncertainty")
+plt.xlabel("drag coefficient Cd")
+plt.ylabel("rolling friction μk")
+plt.title("Combinations of Cd and μk that fit each run")
+plt.legend(fontsize=8)
+plt.tight_layout()
+plt.savefig("fig_uncertainty.png", dpi=150)
+plt.show()
