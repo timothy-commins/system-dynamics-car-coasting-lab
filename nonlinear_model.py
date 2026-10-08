@@ -100,20 +100,25 @@ print(f"Mean   {Cd:.3f}   {mu_k:.4f}")
 
 
 # %% 5. Plot: model vs. data (both runs on one graph)
+#
+# GPS data = open circles (every 60th point so they don't blur together)
+# Model    = thick solid lines
 
+every = 60
 plt.figure(figsize=(8, 5))
-plt.plot(t_north, v_north, ".", color="lightblue", markersize=2,
-         label="North GPS data")
-plt.plot(t_north, simulate(t_north, v0_N, Cd_N, mu_N, "North"), color="blue",
-         label=f"North model: Cd = {Cd_N:.3f}, μk = {mu_N:.4f}")
-plt.plot(t_south, v_south, ".", color="orange", markersize=2,
-         label="South GPS data")
-plt.plot(t_south, simulate(t_south, v0_S, Cd_S, mu_S, "South"), color="red",
-         label=f"South model: Cd = {Cd_S:.3f}, μk = {mu_S:.4f}")
+plt.plot(t_north[::every], v_north[::every], "o", markerfacecolor="none",
+         markeredgecolor="cornflowerblue", markersize=4, label="North GPS data")
+plt.plot(t_north, simulate(t_north, v0_N, Cd_N, mu_N, "North"), color="navy",
+         linewidth=2.5, label=f"North model: Cd = {Cd_N:.3f}, μk = {mu_N:.4f}")
+plt.plot(t_south[::every], v_south[::every], "s", markerfacecolor="none",
+         markeredgecolor="orange", markersize=4, label="South GPS data")
+plt.plot(t_south, simulate(t_south, v0_S, Cd_S, mu_S, "South"), color="darkred",
+         linewidth=2.5, label=f"South model: Cd = {Cd_S:.3f}, μk = {mu_S:.4f}")
 plt.title("Nonlinear model vs. GPS data")
 plt.xlabel("time [s]")
 plt.ylabel("speed [m/s]")
 plt.legend()
+plt.grid(alpha=0.3)
 plt.tight_layout()
 plt.savefig("fig_nonlinear_fit.png", dpi=150)
 
