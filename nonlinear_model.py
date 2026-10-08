@@ -161,13 +161,25 @@ print("(The 2016 GS350 engine is rated at 311 hp.)")
 
 # %% 8. Uncertainty
 #
-# (a) Repeating the test: the North and South runs are two separate tests,
-#     so the difference between them shows how much Cd and mu_k could vary.
+# (a) Repeating the test: the North and South runs are two separate tests of
+#     the same car, so the difference between them shows how much Cd and
+#     mu_k could vary.  Best estimate = average of the two runs,
+#     uncertainty = half the difference between them.
+#
+#     - mu_k has the larger relative uncertainty: friction is a small force
+#       compared with gravity on the slope, so small errors in the slope or
+#       wind change mu_k a lot.
+#     - The two uncertainties are linked: a higher Cd with a lower mu_k fits
+#       almost as well (see the contour plot below), so the power estimates
+#       are more certain than the separate ± values suggest.
+#     - Changing the slope, wind or mass by reasonable amounts moves the
+#       averages much less than the North/South difference, so the
+#       run-to-run spread is used as the uncertainty.
 
 dCd = abs(Cd_N - Cd_S) / 2
 dmu = abs(mu_N - mu_S) / 2
-print(f"\nCd   = {Cd:.3f} ± {dCd:.3f}")
-print(f"mu_k = {mu_k:.4f} ± {dmu:.4f}")
+print(f"\nCd   = {Cd:.3f} ± {dCd:.3f}   (± {100 * dCd / Cd:.0f}%)")
+print(f"mu_k = {mu_k:.4f} ± {dmu:.4f}  (± {100 * dmu / mu_k:.0f}%)")
 
 # Effect on horsepower: compare the power from each run's own values
 for speed, name in [(v55, " 55 mph"), (v100, "100 mph")]:
