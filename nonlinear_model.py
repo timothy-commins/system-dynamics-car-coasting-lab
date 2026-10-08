@@ -99,21 +99,23 @@ print(f"South  {Cd_S:.3f}   {mu_S:.4f}    {err_S:.3f}")
 print(f"Mean   {Cd:.3f}   {mu_k:.4f}")
 
 
-# %% 5. Plot: model vs. data
+# %% 5. Plot: model vs. data (both runs on one graph)
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-ax1.plot(t_north, v_north, ".", color="gray", markersize=2, label="GPS data")
-ax1.plot(t_north, simulate(t_north, v0_N, Cd_N, mu_N, "North"), "r",
-         label=f"model: Cd = {Cd_N:.3f}, μk = {mu_N:.4f}")
-ax1.set(title="Traveling North (uphill)", xlabel="time [s]", ylabel="speed [m/s]")
-ax1.legend()
-ax2.plot(t_south, v_south, ".", color="gray", markersize=2, label="GPS data")
-ax2.plot(t_south, simulate(t_south, v0_S, Cd_S, mu_S, "South"), "r",
-         label=f"model: Cd = {Cd_S:.3f}, μk = {mu_S:.4f}")
-ax2.set(title="Traveling South (downhill)", xlabel="time [s]", ylabel="speed [m/s]")
-ax2.legend()
-fig.tight_layout()
-fig.savefig("fig_nonlinear_fit.png", dpi=150)
+plt.figure(figsize=(8, 5))
+plt.plot(t_north, v_north, ".", color="lightblue", markersize=2,
+         label="North GPS data")
+plt.plot(t_north, simulate(t_north, v0_N, Cd_N, mu_N, "North"), color="blue",
+         label=f"North model: Cd = {Cd_N:.3f}, μk = {mu_N:.4f}")
+plt.plot(t_south, v_south, ".", color="orange", markersize=2,
+         label="South GPS data")
+plt.plot(t_south, simulate(t_south, v0_S, Cd_S, mu_S, "South"), color="red",
+         label=f"South model: Cd = {Cd_S:.3f}, μk = {mu_S:.4f}")
+plt.title("Nonlinear model vs. GPS data")
+plt.xlabel("time [s]")
+plt.ylabel("speed [m/s]")
+plt.legend()
+plt.tight_layout()
+plt.savefig("fig_nonlinear_fit.png", dpi=150)
 
 
 # %% 6. What does each term do?
