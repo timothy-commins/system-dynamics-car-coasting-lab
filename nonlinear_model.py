@@ -48,7 +48,7 @@ t_south, v_south = load_data("south_data.csv")   # driving downhill, wind behind
 #
 #   gravity  = +m g sin(theta) going North (uphill), -m g sin(theta) going South
 #   friction = mu_k * N = mu_k m g cos(theta)          (always slows the car)
-#   drag     = 1/2 Cd A rho v_rel^2, where v_rel = speed relative to the air:
+#   drag     = 1/2 Cd A rho v_rel|v_rel|, where v_rel = speed relative to the air:
 #              v + v_wind going North (headwind), v - v_wind going South
 
 def dv_dt(t, v, Cd, mu_k, direction):
@@ -59,7 +59,9 @@ def dv_dt(t, v, Cd, mu_k, direction):
         gravity = -m * g * np.sin(theta)
         v_rel = v - v_wind
     friction = mu_k * m * g * np.cos(theta)
-    drag = 0.5 * Cd * A * rho * v_rel**2
+    # v_rel * |v_rel| is v_rel^2 with the sign kept, so drag always opposes
+    # the car's motion relative to the air (same as v_rel^2 when v_rel > 0)
+    drag = 0.5 * Cd * A * rho * v_rel * abs(v_rel)
     return -(gravity + friction + drag) / m
 
 
@@ -80,7 +82,9 @@ def fit(t, v, direction):
     def error(p):
         Cd, mu_k, v0 = p
         return v - simulate(t, v0, Cd, mu_k, direction)
-    result = least_squares(error, [0.3, 0.01, v[0]])
+    # bounds keep Cd, mu_k and v0 from going negative (not physical)
+    result = least_squares(error, [0.3, 0.01, v[0]],
+                           bounds=([0, 0, 0], [2, 1, np.inf]))
     Cd, mu_k, v0 = result.x
     rms_error = np.sqrt(np.mean(result.fun**2))
     return Cd, mu_k, v0, rms_error
@@ -220,6 +224,10 @@ print(f"Total (quadrature)         {np.sqrt(total_Cd2):.4f}   {np.sqrt(total_mu2
 # (c) Different combinations that fit equally well: compute the RMS error
 #     over a grid of Cd and mu_k values. A long, thin valley means a higher Cd
 #     with a lower mu_k fits almost as well, so the two are hard to separate.
+#     Note: v0 is held at each run's best fit here (refitting it at every
+#     grid point is too slow), so the valleys look a bit narrower than they
+#     really are. E.g. forcing the North Cd to +/-20% gives RMS 0.25 m/s
+#     with v0 fixed, but only 0.195 m/s when v0 is also refit.
 
 Cd_values = np.linspace(0.15, 0.45, 60)
 mu_values = np.linspace(0.0, 0.035, 60)
