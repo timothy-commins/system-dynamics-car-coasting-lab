@@ -39,6 +39,36 @@ Dividing by m gives m/s², an acceleration, which is what dv/dt must be.
 
 ---
 
+## Power required on level ground
+
+On level ground (θ = 0) with no wind, gravity drops out of the equation of motion. At a steady speed the car is not accelerating, so the engine must supply a force equal to rolling friction plus drag, and the power is that force times the speed:
+
+$$
+P = v\left(\mu_k m g + \tfrac{1}{2} C_d A \rho\, v^2\right)
+$$
+
+Power was computed in watts/kW using Cd = 0.291 and μk = 0.0154, then converted to horsepower (1 hp = 745.7 W) to compare with the GS350's 311 hp engine.
+
+**Worked example, 55 mph** (v = 55 × 0.44704 = 24.59 m/s):
+
+- Friction force: μk·m·g = 0.0154 × 1910 × 9.81 = 287.6 N
+- Drag force: ½·Cd·A·ρ·v² = 0.5 × 0.291 × 2.15 × 1.06 × 24.59² = 200.1 N
+- Power: (287.6 + 200.1) N × 24.59 m/s = 11.99 kW = **16.1 hp**
+
+| Speed | Friction force | Drag force | Total force | Power | Power | % of 311 hp engine |
+|---|---|---|---|---|---|---|
+| 55 mph (24.59 m/s) | 287.6 N | 200.1 N | 487.8 N | 11.99 kW | **16.1 hp** | 5.2% |
+| 100 mph (44.70 m/s) | 287.6 N | 661.6 N | 949.3 N | 42.44 kW | **56.9 hp** | 18.3% |
+
+**Figure:** `fig_power.png` (section 7 of the script) plots the power needed versus speed, split into friction and drag.
+
+- **Cruising uses a small fraction of the engine.** Even at 100 mph only about 18% of the rated 311 hp is needed; the rest is available for accelerating and climbing.
+- **Power grows much faster than speed.** Going from 55 to 100 mph is 1.8× the speed but about 3.5× the power, because drag power grows with v³ while friction power grows only with v.
+- **The dominant loss changes with speed.** Friction is 59% of the resistance at 55 mph, but drag is 70% of it at 100 mph. The two are equal at about 66 mph.
+- The uncertainty in these values (16.1 ± 3.3 hp and 56.9 ± 0.5 hp) is discussed at the end of the uncertainty section.
+
+---
+
 ## Uncertainty estimates: justification and procedure
 
 | Parameter | Best estimate | Uncertainty |
