@@ -150,17 +150,63 @@ plt.savefig("fig_term_effects.png", dpi=150)
 
 # %% 7. Power needed on level ground (no wind)
 #
-# At a steady speed the engine force equals friction + drag, and P = F * v.
+# On level ground (theta = 0) with no wind, gravity drops out. At a steady
+# speed the engine force equals rolling friction + drag, and power = F * v:
+#
+#   P = v * (mu_k m g  +  1/2 Cd A rho v^2)
+#
+# Computed in metric units (W, then kW) and reported in horsepower
+# (1 hp = 745.7 W) so it can be compared with the engine's maximum.
+
+ENGINE_HP = 311                   # 2016 Lexus GS350 rated power [hp]
+MPH = 0.44704                     # 1 mph in m/s
+
 
 def power_hp(v, Cd, mu_k):
+    """Power [hp] to hold speed v [m/s] on level ground with no wind."""
     force = mu_k * m * g + 0.5 * Cd * A * rho * v**2
-    return force * v / 745.7          # 745.7 W = 1 hp
+    return force * v / 745.7
 
-v55 = 55 * 0.44704
-v100 = 100 * 0.44704
-print(f"\nPower at  55 mph: {power_hp(v55, Cd, mu_k):.1f} hp")
-print(f"Power at 100 mph: {power_hp(v100, Cd, mu_k):.1f} hp")
-print("(The 2016 GS350 engine is rated at 311 hp.)")
+
+v55 = 55 * MPH
+v100 = 100 * MPH
+
+print("\nPower on level ground, no wind (Cd and mu_k from section 4)")
+print("Speed     Friction  Drag     Total    Power    Power    % of")
+print("          [N]       [N]      [N]      [kW]     [hp]     engine")
+for mph in [55, 100]:
+    v = mph * MPH
+    F_friction = mu_k * m * g
+    F_drag = 0.5 * Cd * A * rho * v**2
+    F_total = F_friction + F_drag
+    P_kW = F_total * v / 1000
+    P_hp = F_total * v / 745.7
+    print(f"{mph:>3} mph   {F_friction:6.1f}   {F_drag:6.1f}   {F_total:6.1f}   "
+          f"{P_kW:6.2f}   {P_hp:6.1f}   {100 * P_hp / ENGINE_HP:4.1f}%")
+print(f"(The 2016 GS350 engine is rated at {ENGINE_HP} hp.)")
+
+# Plot: power needed vs. speed, split into friction and drag
+mph_range = np.linspace(0, 110, 200)
+v_range = mph_range * MPH
+P_friction = mu_k * m * g * v_range / 745.7
+P_drag = 0.5 * Cd * A * rho * v_range**3 / 745.7
+
+plt.figure(figsize=(7, 4.5))
+plt.plot(mph_range, P_friction + P_drag, "k", linewidth=2.5, label="total")
+plt.plot(mph_range, P_friction, "--", color="C1", label="rolling friction (∝ v)")
+plt.plot(mph_range, P_drag, "--", color="C0", label="aerodynamic drag (∝ v³)")
+for mph in [55, 100]:
+    P = power_hp(mph * MPH, Cd, mu_k)
+    plt.plot(mph, P, "o", color="C3")
+    plt.annotate(f"{P:.1f} hp ({100 * P / ENGINE_HP:.0f}% of engine)", (mph, P),
+                 textcoords="offset points", xytext=(-120, 8))
+plt.title("Power needed to drive on level ground (no wind)")
+plt.xlabel("speed [mph]")
+plt.ylabel("power [hp]")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.savefig("fig_power.png", dpi=150)
 
 
 # %% 8. Uncertainty
